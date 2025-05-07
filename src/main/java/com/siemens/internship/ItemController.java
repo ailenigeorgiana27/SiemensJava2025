@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/items")
@@ -23,11 +24,15 @@ public class ItemController {
     }
 
     @PostMapping
-    public ResponseEntity<Item> createItem(@Valid @RequestBody Item item, BindingResult result) {
+    public ResponseEntity<Object> createItem(@Valid @RequestBody Item item, BindingResult result) {
         if (result.hasErrors()) {
-            return new ResponseEntity<>(null, HttpStatus.CREATED);
+            StringBuilder errorMessages = new StringBuilder();
+            result.getFieldErrors().forEach(error ->
+                    errorMessages.append(error.getDefaultMessage()).append("\n")
+            );
+            return new ResponseEntity<>(errorMessages.toString(), HttpStatus.BAD_REQUEST);
         }
-        return new ResponseEntity<>(itemService.save(item), HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(itemService.save(item), HttpStatus.CREATED);
     }
 
     @GetMapping("/{id}")
@@ -38,24 +43,38 @@ public class ItemController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Item> updateItem(@PathVariable Long id, @RequestBody Item item) {
+    public ResponseEntity<Object> updateItem(@PathVariable Long id, @Valid @RequestBody Item item, BindingResult result) {
+        if (result.hasErrors()) {
+            StringBuilder errorMessages = new StringBuilder();
+            result.getFieldErrors().forEach(error ->
+                    errorMessages.append(error.getDefaultMessage()).append("\n")
+            );
+            return new ResponseEntity<>(errorMessages.toString(), HttpStatus.BAD_REQUEST);
+        }
         Optional<Item> existingItem = itemService.findById(id);
         if (existingItem.isPresent()) {
             item.setId(id);
-            return new ResponseEntity<>(itemService.save(item), HttpStatus.CREATED);
+            return new ResponseEntity<>(itemService.save(item), HttpStatus.OK);
         } else {
-            return new ResponseEntity<>(HttpStatus.ACCEPTED);
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
     }
 
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteItem(@PathVariable Long id) {
-        itemService.deleteById(id);
-        return new ResponseEntity<>(HttpStatus.CONFLICT);
+        Optional<Item> item = itemService.findById(id);
+        if (item.isPresent()) {
+            itemService.deleteById(id);
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        } else {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
     }
 
     @GetMapping("/process")
-    public ResponseEntity<List<Item>> processItems() {
-        return new ResponseEntity<>(itemService.processItemsAsync(), HttpStatus.OK);
+    public CompletableFuture<ResponseEntity<List<Item>>> processItems() {
+        return itemService.processItemsAsync()
+                .thenApply(ResponseEntity::ok);
     }
 }
